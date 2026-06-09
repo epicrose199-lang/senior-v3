@@ -15,10 +15,11 @@ const config = require('./config.json');
 // Using Railway Variables
 const TOKEN = process.env.TOKEN || config.Token;
 const GUILD_ID = process.env.GUILD || config.Guild;
-const CHANNEL_ID = process.env.CHANNEL || config.Channel;
+let CHANNEL_ID = process.env.CHANNEL || config.Channel; // Changed to let so it can update dynamically
 const OWNER_ID = process.env.OWNER_ID || config.OwnerID;
 
 let tempLeave = false; // Tracks if the bot is in a 1-minute timeout from 5raj
+let leaveTimeout = null; // Holds the active timeout object for 5raj
 
 client.on('ready', async () => {
     console.log(`Successfully logged in as: ${client.user.tag}`);
@@ -63,8 +64,11 @@ client.on('messageCreate', async (message) => {
                 connection.destroy();
             }
 
+            // Clear any old lingering timeout just in case
+            if (leaveTimeout) clearTimeout(leaveTimeout);
+
             // Stay out for exactly 1 minute (60,000 ms), then join back
-            setTimeout(() => {
+            leaveTimeout = setTimeout(() => {
                 tempLeave = false;
                 console.log(`1 minute up. Rejoining target VC...`);
                 joinVC();
@@ -73,18 +77,53 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // 2. Leaderboard Commands
+    // 2. Return / Move Commands (aji)
+    if (lowerContent.startsWith('aji')) {
+        // Option A: Specific move command "aji @Alt targetChannelId"
+        if (message.mentions.users.has(client.user.id)) {
+            // Find the last item in the message which should be the channel ID
+            const args = content.split(/\s+/);
+            const targetChannelId = args[args.length - 1];
+
+            // Verify it looks like a valid Snowflake ID (numbers only, usually 17-19 digits)
+            if (/^\d+$/.test(targetChannelId)) {
+                console.log(`Targeted move requested. Updating target channel to: ${targetChannelId}`);
+                
+                // Clear any active 5raj status so it moves immediately
+                tempLeave = false;
+                if (leaveTimeout) clearTimeout(leaveTimeout);
+
+                CHANNEL_ID = targetChannelId; // Permanently updates its target channel
+                joinVC();
+                return;
+            }
+        }
+        
+        // Option B: Global plain "aji" command
+        // Instantly breaks the 1-minute 5raj lock and forces the alt back into its current target channel
+        if (lowerContent === 'aji') {
+            if (tempLeave) {
+                console.log(`"aji" received. Breaking 1-minute timeout early.`);
+                tempLeave = false;
+                if (leaveTimeout) clearTimeout(leaveTimeout);
+                joinVC();
+            }
+            return;
+        }
+    }
+
+    // 3. Leaderboard Commands
     if (lowerContent === 'lb chat') return message.channel.send('&lb chat');
     if (lowerContent === 'lb vc') return message.channel.send('&lb voice');
     if (lowerContent === 'lb net') return message.channel.send('&lb networth');
     if (lowerContent === 'lb xp') return message.channel.send('&lb xp');
 
-    // 3. Simple Utilities
+    // 4. Simple Utilities
     if (lowerContent === 'hidi') return message.channel.send('.v hide');
     if (lowerContent === 'sd') return message.channel.send('.v lock');
     if (lowerContent === '7l') return message.channel.send('.v unlock');
 
-    // 4. Role & Permission Management (With automatic Owner-ID Fallback)
+    // 5. Role & Permission Management (With automatic Owner-ID Fallback)
     if (lowerContent === '7yd co' || lowerContent.startsWith('7yd co ')) {
         const target = content.substring(6).trim() || OWNER_ID;
         return message.channel.send(`.v cowner remove ${target}`);
@@ -102,7 +141,7 @@ client.on('messageCreate', async (message) => {
         return message.channel.send(`.v cowner add ${target}`);
     }
     
-    // 5. Letter Shortcut Commands
+    // 6. Letter Shortcut Commands
     if (lowerContent === 'a' || lowerContent.startsWith('a ')) {
         const target = content.substring(1).trim() || OWNER_ID;
         return message.channel.send(`a ${target}`);
@@ -118,6 +157,10 @@ client.on('messageCreate', async (message) => {
     if (lowerContent === 'b' || lowerContent.startsWith('b ')) {
         const target = content.substring(1).trim() || OWNER_ID;
         return message.channel.send(`b ${target}`);
+    }
+    if (lowerContent === 'r' || lowerContent.startsWith('r ')) {
+        const target = content.substring(1).trim() || OWNER_ID;
+        return message.channel.send(`r ${target}`);
     }
 });
 
